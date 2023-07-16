@@ -135,20 +135,20 @@ const FLockName = "nutsdb-flock"
 type (
 	// DB represents a collection of buckets that persist on disk.
 	DB struct {
-		opt                     Options // the database options
-		BTreeIdx                BTreeIdx
-		BPTreeRootIdxes         []*BPTreeRootIdx
-		BPTreeKeyEntryPosMap    map[string]int64 // key = bucket+key  val = EntryPos
-		bucketMetas             BucketMetasIdx
-		SetIdx                  SetIdx
-		SortedSetIdx            SortedSetIdx
-		Index                   *index
-		ActiveFile              *DataFile
-		ActiveBPTreeIdx         *BPTree
-		ActiveCommittedTxIdsIdx *BPTree
+		opt                     Options          // the database options
+		BTreeIdx                BTreeIdx         // 简单kv数据使用，Hint Index, 一个map，key是bucket，value是B+树，非稀疏索引用这个数据结构
+		BPTreeRootIdxes         []*BPTreeRootIdx // HintBPTSparseIdxMode即稀疏索引模式会用这个字段，保存了所有B+树索引，针对简单kv数据
+		BPTreeKeyEntryPosMap    map[string]int64 // key = bucket+key  val = EntryPos // 简单kv数据使用，key = bucket+key  val = EntryPos
+		bucketMetas             BucketMetasIdx   // HintBPTSparseIdxMode 模式才有bucket meta数据
+		SetIdx                  SetIdx           // set索引 一个map，key是bucket，value是实现的set.Set
+		SortedSetIdx            SortedSetIdx     // zset 索引 一个map，key是bucket，value是实现的zset.SortedSet
+		Index                   *index           // 一个map，key是bucket
+		ActiveFile              *DataFile        // 最新的数据文件
+		ActiveBPTreeIdx         *BPTree          // 简单kv数据使用，b+树稀疏索引（HintBPTSparseIdxMode）用这个字段，b+树稀疏索引
+		ActiveCommittedTxIdsIdx *BPTree          // 保存已提交的事务id，b+树稀疏索引使用
 		MaxFileID               int64
-		mu                      sync.RWMutex
-		KeyCount                int // total key number ,include expired, deleted, repeated.
+		mu                      sync.RWMutex // 读写锁，对db进行读写加锁
+		KeyCount                int          // total key number ,include expired, deleted, repeated.
 		closed                  bool
 		isMerging               bool
 		fm                      *fileManager
@@ -269,10 +269,13 @@ func (db *DB) checkEntryIdxMode() error {
 		}
 	}
 
+	// 稀疏索引模式和另外2个模式不能切换，hasBptDirFlag 表示是稀疏索引
+	// 数据目录表示是b+树稀疏索引，但是opt是其他索引，不支持切换到其他索引
 	if db.opt.EntryIdxMode != HintBPTSparseIdxMode && hasDataFlag && hasBptDirFlag {
 		return errors.New("not support HintBPTSparseIdxMode switch to the other EntryIdxMode")
 	}
 
+	// 同理，不是稀疏索引的目录不能切换到b+树稀疏索引
 	if db.opt.EntryIdxMode == HintBPTSparseIdxMode && !hasBptDirFlag && hasDataFlag {
 		return errors.New("not support the other EntryIdxMode switch to HintBPTSparseIdxMode")
 	}
@@ -548,6 +551,7 @@ func (db *DB) doWrites() {
 }
 
 // setActiveFile sets the ActiveFile (DataFile object).
+// 执行后可以实现对MaxFileID文件的读写
 func (db *DB) setActiveFile() (err error) {
 	filepath := getDataPath(db.MaxFileID, db.opt.Dir)
 	db.ActiveFile, err = db.fm.getDataFile(filepath, db.opt.SegmentSize)
@@ -560,6 +564,7 @@ func (db *DB) setActiveFile() (err error) {
 	return nil
 }
 
+// 扫描db目录下所有的数据文件，从小到大排序，返回最大文件id和文件id列表
 // getMaxFileIDAndFileIds returns max fileId and fileIds.
 func (db *DB) getMaxFileIDAndFileIDs() (maxFileID int64, dataFileIds []int) {
 	files, _ := ioutil.ReadDir(db.opt.Dir)
@@ -727,6 +732,7 @@ func (db *DB) parseDataFiles(dataFileIds []int) (err error) {
 	return
 }
 
+// 构造数据结构db.BPTreeRootIdxes的数据
 func (db *DB) buildBPTreeRootIdxes(dataFileIds []int) error {
 	var off int64
 
@@ -1051,6 +1057,7 @@ func (db *DB) buildIndexes() (err error) {
 	db.MaxFileID = maxFileID
 
 	// set ActiveFile
+	// 将最新的文件load到内存，其实只是open file了，并生成可以读写该文件的fd以及读写数据结构
 	if err = db.setActiveFile(); err != nil {
 		return
 	}
@@ -1077,7 +1084,7 @@ func (db *DB) resetRecordByMode(record *Record) {
 func (db *DB) managed(writable bool, fn func(tx *Tx) error) (err error) {
 	var tx *Tx
 
-	tx, err = db.Begin(writable)
+	tx, err = db.Begin(writable) // 开启一个事务，写会对db加读写锁
 	if err != nil {
 		return err
 	}

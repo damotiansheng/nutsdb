@@ -21,12 +21,15 @@ type EntryIdxMode int
 
 const (
 	// HintKeyValAndRAMIdxMode represents ram index (key and value) mode.
+	// key和value在内存中
 	HintKeyValAndRAMIdxMode EntryIdxMode = iota
 
 	// HintKeyAndRAMIdxMode represents ram index (only key) mode.
+	// key在内存中
 	HintKeyAndRAMIdxMode
 
 	// HintBPTSparseIdxMode represents b+ tree sparse index mode.
+	// B+树稀疏索引
 	HintBPTSparseIdxMode
 )
 

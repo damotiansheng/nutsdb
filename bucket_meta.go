@@ -31,10 +31,10 @@ const (
 
 // BucketMeta represents the bucket's meta-information.
 type BucketMeta struct {
-	startSize uint32
-	endSize   uint32
-	start     []byte
-	end       []byte
+	startSize uint32 // bucket中的最小key大小
+	endSize   uint32 // 最大key大小
+	start     []byte // 最小key, 通过start和end就知道某个key是否可能在该bucket中
+	end       []byte // 最大key
 	crc       uint32
 }
 

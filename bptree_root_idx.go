@@ -28,12 +28,12 @@ const BPTreeRootIdxHeaderSize = 28
 // BPTreeRootIdx represents the b+ tree root index.
 type BPTreeRootIdx struct {
 	crc       uint32
-	fID       uint64
+	fID       uint64 // 文件id
 	rootOff   uint64
 	startSize uint32
 	endSize   uint32
-	start     []byte
-	end       []byte
+	start     []byte // 代表该b+树的最小key，看 getByHintBPTSparseIdxOnDisk 函数，该函数会跟start和end比较大小，从而得知是否要查找的目标key是否在这颗B+树中
+	end       []byte // 代表该b+树的最大key
 }
 
 // Encode returns the slice after the BPTreeRootIdx be encoded.

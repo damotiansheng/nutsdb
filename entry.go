@@ -40,7 +40,7 @@ type (
 		Key     []byte
 		FileID  int64
 		Meta    *MetaData
-		DataPos uint64
+		DataPos uint64 // 该entry在文件中的写入pos
 	}
 
 	// MetaData represents the meta information of the data item.

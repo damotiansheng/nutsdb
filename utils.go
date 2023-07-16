@@ -27,6 +27,7 @@ import (
 )
 
 // Truncate changes the size of the file.
+// 文件小于8M,设置文件大小为8M
 func Truncate(path string, capacity int64, f *os.File) error {
 	fileInfo, _ := os.Stat(path)
 	if fileInfo.Size() < capacity {

@@ -1,7 +1,7 @@
 package nutsdb
 
 import (
-	"github.com/xujiajun/mmap-go"
+	mmap "github.com/xujiajun/mmap-go"
 )
 
 // fileManager holds the fd cache and file-related operations go through the manager to obtain the file processing object
@@ -20,6 +20,7 @@ func newFileManager(rwMode RWMode, maxFdNums int, cleanThreshold float64) (fm *f
 }
 
 // getDataFile will return a DataFile Object
+// 返回对path的操作方法等数据
 func (fm *fileManager) getDataFile(path string, capacity int64) (datafile *DataFile, err error) {
 	if capacity <= 0 {
 		return nil, ErrCapacity

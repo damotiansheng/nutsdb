@@ -57,7 +57,8 @@ func NewDataFile(path string, rwManager RWManager) *DataFile {
 	return dataFile
 }
 
-// ReadAt returns entry at the given off(offset).
+// ReadAt returns entry at the given off(offset).、
+// 数据文件读出entry
 func (df *DataFile) ReadAt(off int) (e *Entry, err error) {
 	buf := make([]byte, DataEntryHeaderSize)
 

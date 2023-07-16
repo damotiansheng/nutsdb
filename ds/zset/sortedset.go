@@ -35,6 +35,7 @@ const (
 type SCORE float64
 
 // SortedSet represents the sorted set.
+// map + 跳表实现的zset
 type SortedSet struct {
 	header *SortedSetNode
 	tail   *SortedSetNode

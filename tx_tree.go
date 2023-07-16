@@ -32,6 +32,7 @@ func getNewKey(bucket string, key []byte) []byte {
 	return newKey
 }
 
+// 读取内存中的b+树索引，通过key查找得到相应的record记录，通过record中保存的pos得到在文件中的写入pos，然后读取该entry出来返回
 func (tx *Tx) getByHintBPTSparseIdxInMem(key []byte) (e *Entry, err error) {
 	// Read in memory.
 	r, err := tx.db.ActiveBPTreeIdx.Find(key)
@@ -104,10 +105,13 @@ func (tx *Tx) getByHintBPTSparseIdxOnDisk(bucket string, key []byte) (e *Entry, 
 	return nil, nil
 }
 
+// B+树稀疏索引查找key数据
 func (tx *Tx) getByHintBPTSparseIdx(bucket string, key []byte) (e *Entry, err error) {
 	newKey := getNewKey(bucket, key)
 
+	// 看该key的索引是否在内存中能查找到，查找到则通过索引读取得到entry
 	entry, err := tx.getByHintBPTSparseIdxInMem(newKey)
+	// 查看是否有被删除或者ttl过期
 	if entry != nil && err == nil {
 		if entry.Meta.Flag == DataDeleteFlag || IsExpired(entry.Meta.TTL, entry.Meta.Timestamp) {
 			return nil, ErrNotFoundKey
@@ -115,6 +119,7 @@ func (tx *Tx) getByHintBPTSparseIdx(bucket string, key []byte) (e *Entry, err er
 		return entry, err
 	}
 
+	// 从磁盘中读取索引
 	entry, err = tx.getByHintBPTSparseIdxOnDisk(bucket, key)
 	if entry != nil && err == nil {
 		return entry, err
@@ -979,7 +984,8 @@ func (tx *Tx) FindLeafOnDisk(fID int64, rootOff int64, key, newKey []byte) (bn *
 		return nil, err
 	}
 
-	for curr.IsLeaf != 1 {
+	// 下面这段逻辑是什么意思，看着像是B+树的查找，一直查找到叶子节点
+	for curr.IsLeaf != 1 { // 非叶子节点
 		i = 0
 		for i < curr.KeysNum {
 			df, err := tx.db.fm.getDataFile(getDataPath(fID, tx.db.opt.Dir), tx.db.opt.SegmentSize)

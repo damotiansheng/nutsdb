@@ -83,9 +83,9 @@ var (
 
 // Tx represents a transaction.
 type Tx struct {
-	id                     uint64
+	id                     uint64 // 事务id，通过雪花算法生成
 	db                     *DB
-	writable               bool
+	writable               bool // 标识是否写
 	status                 atomic.Value
 	pendingWrites          []*Entry
 	ReservedStoreTxIDIdxes map[int64]*BPTree
@@ -239,6 +239,7 @@ func (tx *Tx) Commit() (err error) {
 
 	var bucketMetaTemp BucketMeta
 
+	// 一些状态检查
 	if tx.isClosed() {
 		return ErrCannotCommitAClosedTx
 	}
@@ -248,6 +249,7 @@ func (tx *Tx) Commit() (err error) {
 		return ErrDBClosed
 	}
 
+	// 设置事务状态为提交中
 	tx.setStatusCommitting()
 	defer tx.setStatusClosed()
 
@@ -266,15 +268,18 @@ func (tx *Tx) Commit() (err error) {
 	buff := tx.allocCommitBuffer()
 	defer tx.db.commitBuffer.Reset()
 
+	// 依次写entry
 	for i := 0; i < writesLen; i++ {
 		entry := tx.pendingWrites[i]
 		entrySize := entry.Size()
+		// 单个entry超过单个文件大小
 		if entrySize > tx.db.opt.SegmentSize {
 			return ErrDataSizeExceed
 		}
 
 		bucket := string(entry.Bucket)
 
+		// 超过一个文件的大小，需要进行rotate，buff是要写到active file中的内容
 		if tx.db.ActiveFile.ActualSize+int64(buff.Len())+entrySize > tx.db.opt.SegmentSize {
 			if _, err := tx.writeData(buff.Bytes()); err != nil {
 				return err
@@ -286,13 +291,13 @@ func (tx *Tx) Commit() (err error) {
 			}
 		}
 
-		offset := tx.db.ActiveFile.writeOff + int64(buff.Len())
+		offset := tx.db.ActiveFile.writeOff + int64(buff.Len()) // buff申请下来第一次的长度是0
 
 		if entry.Meta.Ds == DataStructureTree {
 			tx.db.BPTreeKeyEntryPosMap[string(getNewKey(string(entry.Bucket), entry.Key))] = offset
 		}
 
-		if i == lastIndex {
+		if i == lastIndex { // 最后一个entry设置为commited状态，标识事务结束，其他entry没有设置，但是保存了该事务id，启动时会检测到已提交的事务id，从而知道该entry是否已提交，决定是否建立索引
 			entry.Meta.Status = Committed
 		}
 
@@ -300,6 +305,7 @@ func (tx *Tx) Commit() (err error) {
 			return err
 		}
 
+		// 最后一个entry进行批量一次写入文件，写入到db.ActiveFile，而不是每个entry写入文件，提高写入性能
 		if i == lastIndex {
 			if _, err := tx.writeData(buff.Bytes()); err != nil {
 				return err
@@ -307,6 +313,7 @@ func (tx *Tx) Commit() (err error) {
 		}
 
 		if tx.db.opt.EntryIdxMode == HintBPTSparseIdxMode {
+			// 更新bucket元数据
 			bucketMetaTemp = tx.buildTempBucketMetaIdx(bucket, entry.Key, bucketMetaTemp)
 		}
 
@@ -317,6 +324,7 @@ func (tx *Tx) Commit() (err error) {
 					return err
 				}
 
+				// 更新bucket元数据，元数据保存了该bucket保存的最小，最大key数据
 				if err := tx.buildBucketMetaIdx(bucket, entry.Key, bucketMetaTemp); err != nil {
 					return err
 				}
@@ -434,6 +442,7 @@ func (tx *Tx) buildBucketMetaIdx(bucket string, key []byte, bucketMetaTemp Bucke
 	return nil
 }
 
+// 将已提交事务id保存到db.ActiveCommittedTxIdsIdx
 func (tx *Tx) buildTxIDRootIdx(txID uint64, countFlag bool) error {
 	txIDStr := strconv2.IntToStr(int(txID))
 
@@ -503,9 +512,9 @@ func (tx *Tx) buildNotDSIdxes() {
 	}
 }
 
+// 建立b+树索引，更新db.ActiveBPTreeIdx或者db.BPTreeIdx
 func (tx *Tx) buildTreeIdx(record *Record, countFlag bool) {
 	bucket, key, meta, offset := record.Bucket, record.H.Key, record.H.Meta, record.H.DataPos
-
 	if tx.db.opt.EntryIdxMode == HintBPTSparseIdxMode {
 		newKey := getNewKey(bucket, key)
 		hint := NewHint().WithFileId(tx.db.ActiveFile.fileID).WithKey(newKey).WithMeta(meta).WithDataPos(offset)
@@ -748,6 +757,7 @@ func (tx *Tx) writeData(data []byte) (n int, err error) {
 	tx.db.ActiveFile.writeOff += int64(l)
 	tx.db.ActiveFile.ActualSize += int64(l)
 
+	// 是否sync写盘
 	if tx.db.opt.SyncEnable {
 		if err := tx.db.ActiveFile.rwManager.Sync(); err != nil {
 			return 0, err

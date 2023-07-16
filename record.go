@@ -19,6 +19,7 @@ import (
 )
 
 // Record records entry and hint.
+// b+树的节点值，插入按key插入
 type Record struct {
 	H      *Hint
 	V      []byte
