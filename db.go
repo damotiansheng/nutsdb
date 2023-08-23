@@ -118,12 +118,15 @@ const (
 	DataStructureSet uint16 = iota
 
 	// DataStructureSortedSet represents the data structure sorted set flag
+	// set数据
 	DataStructureSortedSet
 
 	// DataStructureTree represents the data structure b+ tree or b tree flag
+	// 普通kv数据
 	DataStructureTree
 
 	// DataStructureList represents the data structure list flag
+	// entry的数据类型是list
 	DataStructureList
 
 	// DataStructureNone represents not the data structure
@@ -199,6 +202,7 @@ func open(opt Options) (*DB, error) {
 		}
 	}
 
+	// 文件锁，同一时刻只有一个进程能打开opt.Dir
 	flock := flock.New(filepath.Join(opt.Dir, FLockName))
 	if ok, err := flock.TryLock(); err != nil {
 		return nil, err
@@ -280,6 +284,7 @@ func (db *DB) checkEntryIdxMode() error {
 		return errors.New("not support the other EntryIdxMode switch to HintBPTSparseIdxMode")
 	}
 
+	// 即kv索引和k索引(只有key在索引中)两种索引模式是可以切换的
 	return nil
 }
 

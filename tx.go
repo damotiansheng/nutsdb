@@ -615,8 +615,10 @@ func (tx *Tx) buildSortedSetIdx(record *Record) {
 }
 
 func (tx *Tx) buildListIdx(record *Record) {
+	// value是数据
 	bucket, key, value, meta := record.Bucket, record.H.Key, record.V, record.H.Meta
 
+	// 非kv索引模式时将value清空
 	tx.db.resetRecordByMode(record)
 
 	l := tx.db.Index.getList(bucket)

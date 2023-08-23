@@ -52,6 +52,7 @@ func (db *DB) merge() error {
 		pendingMergeFIds []int
 	)
 
+	// 不支持稀疏索引模式
 	if db.opt.EntryIdxMode == HintBPTSparseIdxMode {
 		return ErrNotSupportHintBPTSparseIdxMode
 	}
@@ -69,14 +70,17 @@ func (db *DB) merge() error {
 		db.isMerging = false
 	}()
 
+	// pendingMergeFIds为数据文件列表
 	_, pendingMergeFIds = db.getMaxFileIDAndFileIDs()
 	if len(pendingMergeFIds) < 2 {
 		db.mu.Unlock()
 		return ErrDontNeedMerge
 	}
 
+	// 使用新的一个active file
 	db.MaxFileID++
 
+	// 判断是否需要先进行sync
 	if !db.opt.SyncEnable && db.opt.RWMode == MMap {
 		if err := db.ActiveFile.rwManager.Sync(); err != nil {
 			db.mu.Unlock()
@@ -89,6 +93,7 @@ func (db *DB) merge() error {
 		return err
 	}
 
+	// 切换到新的active file
 	var err error
 	path := getDataPath(db.MaxFileID, db.opt.Dir)
 	db.ActiveFile, err = db.fm.getDataFile(path, db.opt.SegmentSize)
@@ -116,7 +121,7 @@ func (db *DB) merge() error {
 				if entry == nil {
 					break
 				}
-
+				// 判断当前entry是否需要过滤，被删除的entry就会被过滤
 				if entry.isFilter() {
 					off += entry.Size()
 					if off >= db.opt.SegmentSize {
@@ -215,6 +220,7 @@ func (db *DB) mergeWorker() {
 	}
 }
 
+// 判断entry是否是有效的entry以及在索引中是否查找得到，如老的entry就不是有效的，因为有该key有更新了
 func (db *DB) isPendingMergeEntry(entry *Entry) bool {
 	if entry.Meta.Ds == DataStructureTree {
 		idx, exist := db.BTreeIdx[string(entry.Bucket)]
@@ -226,6 +232,7 @@ func (db *DB) isPendingMergeEntry(entry *Entry) bool {
 					db.BTreeIdx[string(entry.Bucket)].Delete(entry.Key)
 					return false
 				}
+				// 表明entry是旧的数据，事务id大的表明是最新的数据
 				if r.H.Meta.TxID > entry.Meta.TxID {
 					return false
 				}
@@ -241,6 +248,7 @@ func (db *DB) isPendingMergeEntry(entry *Entry) bool {
 			if err != nil {
 				return false
 			}
+			// 判断是否在索引中
 			if isMember {
 				return true
 			}
@@ -258,12 +266,15 @@ func (db *DB) isPendingMergeEntry(entry *Entry) bool {
 				if err != nil {
 					return false
 				}
+				// 判断是否在索引中，score也相等
 				if s == score {
 					return true
 				}
 			}
 		}
 	}
+
+	// list没处理也没关系，因为处理数据文件是从老到新的
 
 	//if entry.Meta.Ds == DataStructureList {
 	//	//check the key of list is expired or not
